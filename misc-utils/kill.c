@@ -44,7 +44,8 @@
  * Copyright (C) 2014 Karel Zak <kzak@redhat.com>
  */
 
-#include <ctype.h>		/* for isdigit() */
+#include <ctype.h>			/* for isdigit() */
+#include <sys/syscall.h> 	/* for SYS_tkill */
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -97,6 +98,7 @@ struct kill_control {
 		do_pid:1,
 		require_handler:1,
 		use_sigval:1,
+		do_tid:1,
 #ifdef UL_HAVE_PIDFD
 		timeout:1,
 #endif
@@ -215,6 +217,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -L, --table            list signal names and numbers\n"), out);
 	fputs(_(" -r, --require-handler  do not send signal if signal handler is not present\n"), out);
 	fputs(_("     --verbose          print pids that will be signaled\n"), out);
+	fputs(_(" -t, --tid              send signal to thread instread of the whole thread group\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
 	printf(USAGE_HELP_OPTIONS(24));
@@ -269,6 +272,10 @@ static char **parse_arguments(int argc, char **argv, struct kill_control *ctl)
 			print_kill_version();
 		if (!strcmp(arg, "-h") || !strcmp(arg, "--help"))
 			usage();
+		if (!strcmp(arg, "-t") || !strcmp(arg, "--tid")) {
+			ctl->do_tid = 1;
+			continue;
+		}
 		if (!strcmp(arg, "--verbose")) {
 			ctl->verbose = 1;
 			continue;
@@ -447,7 +454,12 @@ static int kill_verbose(const struct kill_control *ctl)
 		rc = sigqueue(ctl->pid, ctl->numsig, ctl->sigdata);
 	else
 #endif
+	if (ctl->do_tid){
+		// rc = tgkill(ctl->pid, ctl->tid, ctl->numsig);
+		rc = syscall(SYS_tkill, ctl->pid, ctl->numsig);
+	} else {
 		rc = kill(ctl->pid, ctl->numsig);
+	}
 
 	if (rc < 0)
 		warn(_("sending signal to %s failed"), ctl->arg);
@@ -557,4 +569,3 @@ int main(int argc, char **argv)
 
 	return KILL_EXIT_SOMEOK;	/* partial success */
 }
-
